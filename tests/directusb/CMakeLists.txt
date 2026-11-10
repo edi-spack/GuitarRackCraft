@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.22)
+project(grc_directusb_contract LANGUAGES C CXX)
+enable_testing()
+find_package(Threads REQUIRED)
+set(CMAKE_CXX_STANDARD 17)
+add_subdirectory(../../3rd_party/directusb/oboe-directusb wrapper)
+add_executable(grc_duplex_contract DuplexContract.cpp)
+target_link_libraries(grc_duplex_contract PRIVATE oboe Threads::Threads ${CMAKE_DL_LIBS})
+add_dependencies(grc_duplex_contract directusb_mock)
+add_test(NAME grc_duplex_contract COMMAND grc_duplex_contract)
+set_tests_properties(grc_duplex_contract PROPERTIES
+    ENVIRONMENT "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:directusb_mock>" TIMEOUT 15)

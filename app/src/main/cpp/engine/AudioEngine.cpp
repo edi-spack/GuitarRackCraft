@@ -21,6 +21,7 @@
 #include "utils/WavIO.h"
 #include "utils/ThreadUtils.h"
 #include <oboe/OboeExtensions.h>
+#include "oboe_directusb.h"
 #include <android/log.h>
 #include <atomic>
 #include <chrono>
@@ -77,7 +78,16 @@ bool AudioEngine::start(float sampleRate, int32_t inputDeviceId,
     chain_.setSampleRate(sampleRate_, callbackFrameCount_);
     chain_.activate();
 
+    // All DSP state and scratch buffers must exist before a USB worker can call us.
     isRunning_ = true;
+    auto result = inputStream_->requestStart();
+    if (result == oboe::Result::OK) result = outputStream_->requestStart();
+    if (result != oboe::Result::OK) {
+        LOGE("Failed to start streams: %s", oboe::convertToText(result));
+        closeStreams();
+        chain_.deactivate();
+        return false;
+    }
     LOGI("start() EXIT tid=%ld Audio engine started at %.0f Hz", getTid(), sampleRate_);
     return true;
 }
@@ -101,12 +111,11 @@ void AudioEngine::stop() {
     // Signal callback to exit immediately so it does not touch chain_ or stream
     // during teardown (avoids use-after-free / destroyed mutex in plugin chain or Oboe).
     isRunning_ = false;
-    LOGI("stop() isRunning_=false set, calling chain_.deactivate()");
+    LOGI("stop() isRunning_=false; quiescing audio before DSP teardown");
 
-    chain_.deactivate();
-    LOGI("stop() chain_.deactivate() done, calling closeStreams()");
-
+    // Quiesce the output callback before deactivating plugins or deleting input.
     closeStreams();
+    chain_.deactivate();
     LOGI("stop() done");
 }
 
@@ -118,6 +127,7 @@ AudioEngine::StreamInfo AudioEngine::getStreamInfo() const {
     StreamInfo info;
     if (outputStream_) {
         info.isAAudio = outputStream_->getAudioApi() == oboe::AudioApi::AAudio;
+        info.isDirectUsb = outputStream_->getAudioApi() == oboe::AudioApi::Unspecified;
         info.outputExclusive = outputStream_->getSharingMode() == oboe::SharingMode::Exclusive;
         info.outputLowLatency = outputStream_->getPerformanceMode() == oboe::PerformanceMode::LowLatency;
         info.outputMMap = oboe::OboeExtensions::isMMapUsed(outputStream_.get());
@@ -300,6 +310,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
     oboe::AudioStream* audioStream,
     void* audioData,
     int32_t numFrames) {
+    std::fill_n(static_cast<float*>(audioData), size_t(std::max(0, numFrames)) * audioStream->getChannelCount(), 0.0f);
     // Debug: log callback thread still active (rate-limited) to correlate with closeStreams() tid
     {
         static std::atomic<int> enterCount{0};
@@ -326,6 +337,11 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         return oboe::DataCallbackResult::Continue;
     }
 
+    if (size_t(numFrames) > inputBuffer_.size() ||
+        size_t(numFrames) > outputBufferLeft_.size() ||
+        size_t(numFrames) > outputBufferRight_.size()) {
+        return oboe::DataCallbackResult::Stop; // negotiated callback bound violated
+    }
     // Input source: WAV playback or microphone
     const bool useWav = wavPlaying_.load() && !wavBuffer_.empty();
     if (useWav) {
@@ -374,15 +390,6 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             LOGI("onAudioReady: source=%s numFrames=%d inputPeak=%.4f",
                  useWav ? "WAV" : "mic", numFrames, inputPeak);
         }
-    }
-
-    // Ensure buffers are large enough
-    if (inputBuffer_.size() < static_cast<size_t>(numFrames)) {
-        inputBuffer_.resize(numFrames);
-    }
-    if (outputBufferLeft_.size() < static_cast<size_t>(numFrames)) {
-        outputBufferLeft_.resize(numFrames);
-        outputBufferRight_.resize(numFrames);
     }
 
     // Set up input pointers (mono guitar input -> stereo)
@@ -582,7 +589,7 @@ bool AudioEngine::createAudioStreams(float sampleRate) {
         inputBuilder.setAudioApi(oboe::AudioApi::Unspecified);
         result = inputBuilder.openStream(&inputStreamPtr);
         if (result != oboe::Result::OK) {
-            LOGE("Failed to open input stream: %s", oboe::convertToText(result));
+            LOGE("Failed to open input stream: %s; %s", oboe::convertToText(result), oboe_directusb_last_error());
             return false;
         }
     }
@@ -622,7 +629,7 @@ bool AudioEngine::createAudioStreams(float sampleRate) {
         outputBuilder.setAudioApi(oboe::AudioApi::Unspecified);
         result = outputBuilder.openStream(&outputStreamPtr);
         if (result != oboe::Result::OK) {
-            LOGE("Failed to open output stream: %s", oboe::convertToText(result));
+            LOGE("Failed to open output stream: %s; %s", oboe::convertToText(result), oboe_directusb_last_error());
             closeStreams();
             return false;
         }
@@ -684,23 +691,9 @@ bool AudioEngine::createAudioStreams(float sampleRate) {
 
     outputStream_.reset(outputStreamPtr);
 
-    // Start streams
-    result = inputStream_->requestStart();
-    if (result != oboe::Result::OK) {
-        LOGE("Failed to start input stream: %s", oboe::convertToText(result));
-        closeStreams();
-        return false;
-    }
-
-    result = outputStream_->requestStart();
-    if (result != oboe::Result::OK) {
-        LOGE("Failed to start output stream: %s", oboe::convertToText(result));
-        closeStreams();
-        return false;
-    }
-
     // Allocate buffers
-    int32_t bufferSize = outputStream_->getBufferSizeInFrames();
+    int32_t bufferSize = std::max(outputStream_->getBufferSizeInFrames(),
+                                  static_cast<int32_t>(callbackFrameCount_));
     inputBuffer_.resize(bufferSize);
     outputBufferLeft_.resize(bufferSize);
     outputBufferRight_.resize(bufferSize);
@@ -718,13 +711,6 @@ void AudioEngine::closeStreams() {
     // from starting while we're tearing down.
     isRunning_.store(false);
     
-    if (inputStream_) {
-        LOGI("closeStreams() input stream stop+close+reset");
-        inputStream_->stop();
-        inputStream_->close();
-        inputStream_.reset();
-    }
-
     if (outputStream_) {
         LOGI("closeStreams() output stream stop");
         outputStream_->stop();
@@ -742,11 +728,20 @@ void AudioEngine::closeStreams() {
         // are concurrent EGL/GL operations that may interfere with the audio subsystem.
         static constexpr int kStreamCloseSleepMs = 500;
         LOGI("closeStreams() sleep %dms before outputStream_.reset() [tid=%ld]", kStreamCloseSleepMs, getTid());
-        std::this_thread::sleep_for(std::chrono::milliseconds(kStreamCloseSleepMs));
+        if (outputStream_->getAudioApi() == oboe::AudioApi::AAudio) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(kStreamCloseSleepMs));
+        } // Direct USB close already synchronously quiesces the callback.
         LOGI("closeStreams() outputStream_.reset() NOW tid=%ld", getTid());
         outputStream_.reset();
         LOGI("closeStreams() output stream destroyed tid=%ld", getTid());
     }
+    if (inputStream_) {
+        LOGI("closeStreams() input stream stop+close+reset");
+        inputStream_->stop();
+        inputStream_->close();
+        inputStream_.reset();
+    }
+
     LOGI("closeStreams() done");
 }
 

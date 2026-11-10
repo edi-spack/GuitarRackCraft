@@ -154,13 +154,13 @@ fun AudioSettingsScreen(
                 )
 
                 ChecklistItem("Oboe API", true)
-                ChecklistItem("AAudio backend", streamInfo.isAAudio, "OpenSL ES")
+                InfoRow("Audio backend", if (streamInfo.isDirectUsb) "Direct USB" else if (streamInfo.isAAudio) "AAudio" else "OpenSL ES")
                 ChecklistItem("Performance: Low Latency", streamInfo.outputLowLatency)
                 ChecklistItem("Sharing: Exclusive (output)", streamInfo.outputExclusive, "Shared")
                 ChecklistItem("Sharing: Exclusive (input)", streamInfo.inputExclusive, "Shared")
                 ChecklistItem("Sample rate: 48000 Hz", sampleRate.toInt() == 48000, "%.0f Hz".format(sampleRate))
                 ChecklistItem("Data callback", streamInfo.outputCallback)
-                ChecklistItem("MMAP buffer", streamInfo.outputMMap)
+                if (!streamInfo.isDirectUsb) ChecklistItem("MMAP buffer", streamInfo.outputMMap)
             }
         }
     }

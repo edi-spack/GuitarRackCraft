@@ -91,3 +91,11 @@ architecture (x86/x64) badges - and chain alongside LV2 plugins like any other e
 ## License
 
 GPLv3 - see [LICENSE](LICENSE).
+
+## Direct USB audio
+
+Supported USB interfaces now use the source-built DirectUSB Oboe wrapper,
+with stock Oboe retained for phone/Bluetooth and unsupported routes. Initialize
+`3rd_party/directusb` before building. See [audio integration notes](docs/direct-usb-audio.md)
+for routing, USB permission, real-time limits and validation steps. The normal
+LV2/VST/plugin native prebuild is still required for a usable effects-host APK.

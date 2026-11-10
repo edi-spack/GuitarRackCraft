@@ -89,14 +89,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends patch patchelf binutils python3
 
-      # The Gradle C++ builds compile oboe, the one submodule this job needs;
-      # it gets its 3rd_party/patches as build.sh would apply them.
-      - name: Check out and patch oboe
-        run: |
-          git submodule update --init --depth 1 3rd_party/oboe
-          for p in 3rd_party/patches/oboe/*.patch; do
-            scripts/apply-patches.sh "$p" 3rd_party/oboe
-          done
+      # Gradle builds the pinned USB driver, Oboe wrapper and stock fallback.
+      # Existing plugin/X11/VST native inputs still come from component caches.
+      - name: Check out pinned USB audio stack
+        run: git submodule update --init --depth 1 3rd_party/directusb
 
       # ── 3. JDK 17 + Android SDK packages ────────────────────────────────
       - name: Android toolchain

@@ -41,6 +41,10 @@ object EngineInitHelper {
         onExtractionProgress: ((extracted: Int, total: Int) -> Unit)? = null
     ): Boolean {
         val engine = NativeEngine.getInstance()
+        if (!engine.nativeConfigureAudio(context.applicationContext)) {
+            Log.e(TAG, "Could not configure USB audio application context")
+            return false
+        }
         val lv2Dir = File(context.applicationContext.filesDir, "lv2")
         val lv2Path = lv2Dir.canonicalPath
         Log.d(TAG, "Setting LV2 path: $lv2Path")

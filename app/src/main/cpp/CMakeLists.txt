@@ -25,13 +25,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # The repository root (this file is app/src/main/cpp/CMakeLists.txt).
 get_filename_component(GRC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." ABSOLUTE)
 
-# Oboe library (3rd_party submodule)
-set(OBOE_ROOT "${GRC_ROOT}/3rd_party/oboe")
-if(EXISTS "${OBOE_ROOT}/CMakeLists.txt")
-    add_subdirectory(${OBOE_ROOT} oboe_build)
-else()
-    message(FATAL_ERROR "Oboe not found. Run: git submodule update --init --recursive 3rd_party/oboe")
-endif()
+# Source-built USB-first Oboe factory; stock Oboe remains available for
+# built-in/Bluetooth and unsupported USB modes. Both use the same pinned headers.
+include("${GRC_ROOT}/cmake/DirectUsbAudio.cmake")
 
 # LV2 Libraries Configuration
 # Set LV2_LIBS_DIR to the directory containing compiled LV2 libraries
@@ -167,7 +163,7 @@ add_library(audio_engine STATIC
     engine/AudioRecorder.cpp
     engine/OfflineProcessor.cpp
 )
-target_link_libraries(audio_engine utils)
+target_link_libraries(audio_engine PUBLIC utils oboe)
 
 # XShm stub - used when plugin UI .so references MIT-SHM (fallback to XPutImage)
 add_library(xshm_stub STATIC
@@ -213,3 +209,8 @@ if(HAS_VST_HOST)
     target_link_libraries(guitarrackcraft vsthost_lib::vsthost)
     target_compile_definitions(guitarrackcraft PRIVATE HAS_VST_HOST=1)
 endif()
+
+add_dependencies(guitarrackcraft directusb oboeoriginal)
+
+# All source-built APK audio libraries support Android 16 KB pages.
+target_link_options(guitarrackcraft PRIVATE "-Wl,-z,max-page-size=16384")

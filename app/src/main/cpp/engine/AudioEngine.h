@@ -75,7 +75,8 @@ public:
     uint32_t getCallbackFrameCount() const { return callbackFrameCount_; }
 
     struct StreamInfo {
-        bool isAAudio = false;         // AAudio vs OpenSL ES
+        bool isAAudio = false;
+        bool isDirectUsb = false;      // USB transport bypasses Android audio
         bool inputExclusive = false;   // Exclusive sharing mode granted
         bool outputExclusive = false;
         bool inputLowLatency = false;  // LowLatency performance mode granted

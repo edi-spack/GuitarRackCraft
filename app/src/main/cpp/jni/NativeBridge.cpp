@@ -18,6 +18,7 @@
  */
 
 #include <jni.h>
+#include "oboe_directusb.h"
 #include <android/log.h>
 #include <atomic>
 #include <csignal>
@@ -173,7 +174,7 @@ static void sigabrt_handler(int signum) {
 extern "C" {
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
-    (void)vm;
+    oboe_directusb_set_java_vm(vm);
     (void)reserved;
     struct sigaction sa = {};
     sa.sa_handler = sigabrt_handler;
@@ -181,6 +182,16 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     sa.sa_flags = 0;
     sigaction(SIGABRT, &sa, nullptr);
     return JNI_VERSION_1_6;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_varcain_guitarrackcraft_engine_NativeEngine_nativeConfigureAudio(JNIEnv* env, jobject, jobject context) {
+    return oboe_directusb_set_application_context(env, context)==0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_varcain_guitarrackcraft_engine_NativeEngine_nativeAudioError(JNIEnv* env, jobject) {
+    return env->NewStringUTF(oboe_directusb_last_error());
 }
 
 JNIEXPORT void JNICALL
@@ -426,7 +437,7 @@ Java_com_varcain_guitarrackcraft_engine_NativeEngine_nativeGetBufferFrameCount(J
 JNIEXPORT jintArray JNICALL
 Java_com_varcain_guitarrackcraft_engine_NativeEngine_nativeGetStreamInfo(JNIEnv* env, jobject thiz) {
     // Returns [isAAudio, inputExclusive, outputExclusive, inputLowLatency, outputLowLatency, outputMMap, outputCallback, framesPerBurst]
-    jint arr[8] = {};
+    jint arr[9] = {};
     if (g_ctx->audioEngine && g_ctx->audioEngine->isRunning()) {
         auto info = g_ctx->audioEngine->getStreamInfo();
         arr[0] = info.isAAudio ? 1 : 0;
@@ -437,10 +448,11 @@ Java_com_varcain_guitarrackcraft_engine_NativeEngine_nativeGetStreamInfo(JNIEnv*
         arr[5] = info.outputMMap ? 1 : 0;
         arr[6] = info.outputCallback ? 1 : 0;
         arr[7] = info.framesPerBurst;
+        arr[8] = info.isDirectUsb ? 1 : 0;
     }
-    jintArray result = env->NewIntArray(8);
+    jintArray result = env->NewIntArray(9);
     if (result) {
-        env->SetIntArrayRegion(result, 0, 8, arr);
+        env->SetIntArrayRegion(result, 0, 9, arr);
     }
     return result;
 }

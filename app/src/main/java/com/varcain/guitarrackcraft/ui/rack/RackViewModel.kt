@@ -196,6 +196,9 @@ class RackViewModel(application: Application) : AndroidViewModel(application) {
                 _isEngineRunning.value = started
                 if (started) {
                     _errorMessage.value = null
+                } else {
+                    _errorMessage.value = com.varcain.guitarrackcraft.engine.NativeEngine.getInstance().nativeAudioError()
+                        .ifBlank { "Audio could not start. Check the selected input/output and USB permission, then retry." }
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "Failed to start engine: ${e.message}"

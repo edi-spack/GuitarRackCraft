@@ -30,7 +30,8 @@ data class AudioStreamInfo(
     val outputLowLatency: Boolean = false,
     val outputMMap: Boolean = false,
     val outputCallback: Boolean = false,
-    val framesPerBurst: Int = 0
+    val framesPerBurst: Int = 0,
+    val isDirectUsb: Boolean = false
 )
 
 /**
@@ -64,6 +65,9 @@ class NativeEngine private constructor() {
      * Set the path where LV2 bundles (e.g. Guitarix) are extracted.
      * Must be called before nativeInit() so plugins are discovered.
      */
+    external fun nativeConfigureAudio(context: Context): Boolean
+    external fun nativeAudioError(): String
+
     external fun nativeSetLv2Path(path: String)
 
     /**
@@ -444,7 +448,8 @@ class NativeEngine private constructor() {
             outputLowLatency = arr[4] != 0,
             outputMMap = arr[5] != 0,
             outputCallback = arr[6] != 0,
-            framesPerBurst = arr[7]
+            framesPerBurst = arr[7],
+            isDirectUsb = arr[8] != 0
         )
     }
 

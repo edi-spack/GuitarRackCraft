@@ -147,8 +147,15 @@ struct LV2UI_Port_Map {
 
 // Forward-declare the global URID map/unmap from LV2Plugin.cpp
 // so that UI and DSP share the same URID numbering.
+#if defined(HAVE_LV2) && HAVE_LV2 == 1
 extern LV2_URID_Map globalLv2UridMap;
 extern LV2_URID_Unmap globalLv2UridUnmap;
+#else
+// UI-only builds have no DSP URI registry or plugins. Keep the optional stub
+// linkable without inventing valid URIDs; the real LV2 build uses its DSP map.
+static LV2_URID_Map globalLv2UridMap = {nullptr, [](LV2_URID_Map_Handle, const char*) -> LV2_URID { return 0; }};
+static LV2_URID_Unmap globalLv2UridUnmap = {nullptr, [](LV2_URID_Unmap_Handle, LV2_URID) -> const char* { return nullptr; }};
+#endif
 
 /* UI URID map — delegates to the global (DSP) map so both sides produce
    identical URIDs.  This is critical for atom-based communication (e.g. DPF

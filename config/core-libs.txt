@@ -8,6 +8,9 @@
 # One shell glob per line, matched against the file name. '#' starts a comment.
 
 libguitarrackcraft.so
+liboboe.so
+liboboeoriginal.so
+libdirectusb.so
 libc++_shared.so
 
 # X11 client libraries (plugin UIs, wine's winex11.drv)
